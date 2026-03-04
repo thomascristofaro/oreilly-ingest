@@ -36,50 +36,33 @@ class ChunkingPlugin(Plugin):
         chapters_data: list[tuple[str, str, str]],
         config: ChunkConfig | None = None,
     ) -> Path:
-        """Generate chunked JSONL export."""
+        """Generate chunked JSONL export, streaming to disk chapter-by-chapter."""
         if config is None:
             config = ChunkConfig()
 
-        chunks = self.chunk_book(chapters_data, config)
-
         title = book_metadata.get("title", "Unknown")
         safe_title = sanitize_filename(title)
-
         output_path = book_dir / f"{safe_title}_chunks.jsonl"
+
+        chunk_id = 0
         with open(output_path, "w", encoding="utf-8") as f:
-            for chunk in chunks:
-                f.write(json.dumps(chunk, ensure_ascii=False) + "\n")
+            for chapter_index, (filename, ch_title, html) in enumerate(chapters_data):
+                text = self._extractor.extract_text_only(html)
+                chapter_chunks = self.chunk_text(
+                    text,
+                    config.chunk_size,
+                    config.overlap,
+                    config.respect_boundaries,
+                )
+                for chunk in chapter_chunks:
+                    chunk["chunk_id"] = chunk_id
+                    chunk["chapter_index"] = chapter_index
+                    chunk["chapter_title"] = ch_title
+                    chunk["chapter_filename"] = filename
+                    f.write(json.dumps(chunk, ensure_ascii=False) + "\n")
+                    chunk_id += 1
 
         return output_path
-
-    def chunk_book(
-        self,
-        chapters_data: list[tuple[str, str, str]],
-        config: ChunkConfig,
-    ) -> list[dict]:
-        """Chunk an entire book, preserving chapter metadata."""
-        all_chunks = []
-        chunk_id = 0
-
-        for chapter_index, (filename, title, html) in enumerate(chapters_data):
-            text = self._extractor.extract_text_only(html)
-
-            chapter_chunks = self.chunk_text(
-                text,
-                config.chunk_size,
-                config.overlap,
-                config.respect_boundaries,
-            )
-
-            for chunk in chapter_chunks:
-                chunk["chunk_id"] = chunk_id
-                chunk["chapter_index"] = chapter_index
-                chunk["chapter_title"] = title
-                chunk["chapter_filename"] = filename
-                all_chunks.append(chunk)
-                chunk_id += 1
-
-        return all_chunks
 
     def chunk_text(
         self,
@@ -173,11 +156,5 @@ class ChunkingPlugin(Plugin):
         return target_pos
 
     def _get_token_count(self, text: str) -> int:
-        """Get token count via TokenPlugin."""
-        try:
-            token_plugin = self.kernel.get("token")
-            if token_plugin:
-                return token_plugin.count_tokens(text)
-        except Exception:
-            pass
+        """Estimate token count using word count heuristic (avoids tiktoken memory spikes)."""
         return int(len(text.split()) * 1.3)
