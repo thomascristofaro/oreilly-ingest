@@ -267,7 +267,7 @@ class DownloaderPlugin(Plugin):
             filename = ch["filename"].replace(".html", ".xhtml")
             file_path = oebps / filename
             file_path.parent.mkdir(parents=True, exist_ok=True)
-            file_path.write_text(xhtml)
+            file_path.write_text(xhtml, encoding='utf-8')
 
             chapters_data.append((ch["filename"], ch["title"], processed))
 
