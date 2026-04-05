@@ -20,7 +20,7 @@ class AssetsPlugin(Plugin):
 
         save_path.parent.mkdir(parents=True, exist_ok=True)
         content = self.http.get_text(url)
-        save_path.write_text(content)
+        save_path.write_text(content, encoding='utf-8')
         return True
 
     def download_all_images(
