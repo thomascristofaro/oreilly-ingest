@@ -36,10 +36,11 @@ class SystemPlugin(Plugin):
 
     def _show_macos_picker(self, initial_dir: str | None) -> Path | None:
         """Show macOS folder picker using osascript."""
-        if initial_dir:
+        safe_dir = initial_dir if initial_dir and '"' not in initial_dir else None
+        if safe_dir:
             script = (
                 f'POSIX path of (choose folder with prompt "Select Download Folder" '
-                f'default location POSIX file "{initial_dir}")'
+                f'default location POSIX file "{safe_dir}")'
             )
         else:
             script = 'POSIX path of (choose folder with prompt "Select Download Folder")'
