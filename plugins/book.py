@@ -1,11 +1,35 @@
+import re
+
 from .base import Plugin
 import config
+
+
+_COVER_WIDTH_RE = re.compile(r'/\d+w/?$')
+_HIGH_RES_COVER_WIDTH = '1200w'
+
+
+def _upgrade_cover_url(url: str) -> str:
+    """Upgrade an O'Reilly cover URL to a high-resolution variant.
+
+    O'Reilly serves covers at /library/cover/{isbn}/ and /covers/urn:orm:book:{id}/,
+    optionally with a /{N}w/ width segment. The base URL (no width) returns a
+    low-res thumbnail (~160x184). Appending /1200w/ returns a print-quality image.
+    """
+    if "/library/cover/" not in url and "/covers/urn:orm:book:" not in url:
+        return url
+    # Strip any existing width segment from the end, then append high-res width.
+    stripped = _COVER_WIDTH_RE.sub("", url, count=1).rstrip("/")
+    return f"{stripped}/{_HIGH_RES_COVER_WIDTH}/"
 
 
 class BookPlugin(Plugin):
     def fetch(self, book_id: str) -> dict:
         search_data = self._fetch_search(book_id)
         epub_data = self._fetch_epub(book_id)
+
+        cover_url = search_data.get("cover_url")
+        if cover_url:
+            cover_url = _upgrade_cover_url(cover_url)
 
         return {
             "id": book_id,
@@ -14,7 +38,7 @@ class BookPlugin(Plugin):
             "authors": search_data.get("authors", []),
             "publishers": search_data.get("publishers", []),
             "description": epub_data.get("descriptions", {}).get("text/html", ""),
-            "cover_url": search_data.get("cover_url"),
+            "cover_url": cover_url,
             "isbn": epub_data.get("isbn"),
             "language": epub_data.get("language", "en"),
             "publication_date": epub_data.get("publication_date"),
