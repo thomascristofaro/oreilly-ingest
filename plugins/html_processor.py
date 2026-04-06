@@ -1,4 +1,5 @@
 import re
+import shutil
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -109,10 +110,12 @@ body{{margin:1em;background-color:transparent!important;}}
         """Replace CSS content:url() pseudo-element images with inline <img> tags.
 
         Apple Books doesn't support content:url() in pseudo-elements.
-        This parses downloaded CSS for such rules, injects <img> tags into
+        This parses downloaded CSS for such rules, copies the referenced images
+        to Images/ (so they appear in the manifest), injects <img> tags into
         matching XHTML elements, and strips the CSS rules to avoid duplicates.
         """
         styles_dir = oebps / "Styles"
+        images_dir = oebps / "Images"
         if not styles_dir.exists():
             return
 
@@ -120,7 +123,7 @@ body{{margin:1em;background-color:transparent!important;}}
         rules = []  # (selector, img_src_relative_to_xhtml, is_before)
         for css_path in sorted(styles_dir.glob("Style*.css")):
             css_text = css_path.read_text(encoding="utf-8")
-            found = self._extract_css_content_url_rules(css_text, css_path.name)
+            found = self._extract_css_content_url_rules(css_text, styles_dir, images_dir)
             if found:
                 rules.extend(found)
                 # Strip content:url() from CSS to avoid duplicates
@@ -141,9 +144,12 @@ body{{margin:1em;background-color:transparent!important;}}
             self._inject_images_into_xhtml(xhtml_path, rules)
 
     def _extract_css_content_url_rules(
-        self, css_text: str, css_filename: str
+        self, css_text: str, styles_dir: Path, images_dir: Path
     ) -> list[tuple[str, str, bool]]:
-        """Extract (css_selector, image_src, is_before) from content:url() rules."""
+        """Extract (css_selector, image_src, is_before) from content:url() rules.
+
+        Copies referenced images to Images/ so they appear in the EPUB manifest.
+        """
         results = []
         for match in re.finditer(
             r'([^{}]+?)\s*\{[^}]*?content\s*:\s*url\(["\']?([^)"\']+)["\']?\)[^}]*\}',
@@ -161,9 +167,15 @@ body{{margin:1em;background-color:transparent!important;}}
             if not selector:
                 continue
 
-            # Image path relative to XHTML (which is in OEBPS)
-            # CSS is in OEBPS/Styles/, so Styles/{url_ref}
-            img_src = f"Styles/{url_ref}"
+            # Copy image from Styles/css_assets/ to Images/ for manifest inclusion
+            src_file = styles_dir / url_ref
+            filename = Path(url_ref).name
+            if src_file.exists():
+                images_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_file, images_dir / filename)
+
+            # Reference from Images/ (relative to XHTML in OEBPS)
+            img_src = f"Images/{filename}"
 
             # Handle comma-separated selectors
             for sel in selector.split(","):
