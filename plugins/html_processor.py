@@ -4,7 +4,7 @@ from .base import Plugin
 
 
 class HtmlProcessorPlugin(Plugin):
-    def process(self, html: str, book_id: str, skip_images: bool = False) -> tuple[str, list[str]]:
+    def process(self, html: str, book_id: str, skip_images: bool = False, path_prefix: str = "") -> tuple[str, list[str]]:
         soup = BeautifulSoup(html, "lxml")
         images_found = []
 
@@ -18,7 +18,7 @@ class HtmlProcessorPlugin(Plugin):
             self._remove_images(content_div)
             images_found = []
         else:
-            images_found = self._rewrite_image_links(content_div)
+            images_found = self._rewrite_image_links(content_div, path_prefix)
 
         self._rewrite_href_links(content_div, book_id)
         self._handle_data_template_styles(content_div)
@@ -43,7 +43,7 @@ class HtmlProcessorPlugin(Plugin):
             else:
                 image_tag.replace_with(img_tag)
 
-    def _rewrite_image_links(self, soup) -> list[str]:
+    def _rewrite_image_links(self, soup, path_prefix: str = "") -> list[str]:
         images = []
         for img in soup.find_all("img"):
             src = img.get("src", "")
@@ -51,7 +51,7 @@ class HtmlProcessorPlugin(Plugin):
                 continue
 
             filename = src.split("/")[-1]
-            img["src"] = f"../Images/{filename}"
+            img["src"] = f"{path_prefix}Images/{filename}"
             images.append(src)
 
         return images

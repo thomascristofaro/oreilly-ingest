@@ -246,10 +246,15 @@ class DownloaderPlugin(Plugin):
                 chapter_title=ch.get("title", ""),
             )
 
+            # Compute relative path prefix based on chapter depth in OEBPS
+            filename = ch["filename"].replace(".html", ".xhtml")
+            depth = filename.count("/")
+            path_prefix = "../" * depth if depth > 0 else ""
+
             # Fetch and process chapter content
             raw_html = chapters_plugin.fetch_content(ch["content_url"])
             processed, images = html_processor.process(
-                raw_html, book_id, skip_images=skip_images
+                raw_html, book_id, skip_images=skip_images, path_prefix=path_prefix
             )
 
             # Collect CSS and image URLs
@@ -261,11 +266,10 @@ class DownloaderPlugin(Plugin):
                     all_image_urls.add(img_url)
 
             # Wrap in XHTML
-            css_refs = [f"../Styles/Style{j:02d}.css" for j in range(len(all_css_urls))]
+            css_refs = [f"{path_prefix}Styles/Style{j:02d}.css" for j in range(len(all_css_urls))]
             xhtml = html_processor.wrap_xhtml(processed, css_refs, ch["title"])
 
             # Write chapter file
-            filename = ch["filename"].replace(".html", ".xhtml")
             file_path = oebps / filename
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(xhtml, encoding='utf-8')
