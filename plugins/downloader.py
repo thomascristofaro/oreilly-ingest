@@ -321,6 +321,10 @@ class DownloaderPlugin(Plugin):
 
         assets_plugin.download_all_css(css_list, oebps, progress_callback=css_progress)
 
+        # Download assets referenced in CSS (e.g. url() images in ::after)
+        if not skip_images:
+            assets_plugin.download_css_assets(css_list, oebps)
+
         # Download images
         if not skip_images:
             img_width = len(str(len(image_list)))
