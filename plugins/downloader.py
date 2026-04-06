@@ -324,6 +324,8 @@ class DownloaderPlugin(Plugin):
         # Download assets referenced in CSS (e.g. url() images in ::after)
         if not skip_images:
             assets_plugin.download_css_assets(css_list, oebps)
+            # Inline CSS content:url() images as <img> tags (Apple Books compat)
+            html_processor.inline_css_content_images(oebps)
 
         # Download images
         if not skip_images:

@@ -1,4 +1,6 @@
 import re
+from pathlib import Path
+
 from bs4 import BeautifulSoup
 from .base import Plugin
 
@@ -102,6 +104,102 @@ body{{margin:1em;background-color:transparent!important;}}
 {content}
 </body>
 </html>'''
+
+    def inline_css_content_images(self, oebps: Path):
+        """Replace CSS content:url() pseudo-element images with inline <img> tags.
+
+        Apple Books doesn't support content:url() in pseudo-elements.
+        This parses downloaded CSS for such rules, injects <img> tags into
+        matching XHTML elements, and strips the CSS rules to avoid duplicates.
+        """
+        styles_dir = oebps / "Styles"
+        if not styles_dir.exists():
+            return
+
+        # Collect rules from all CSS files
+        rules = []  # (selector, img_src_relative_to_xhtml, is_before)
+        for css_path in sorted(styles_dir.glob("Style*.css")):
+            css_text = css_path.read_text(encoding="utf-8")
+            found = self._extract_css_content_url_rules(css_text, css_path.name)
+            if found:
+                rules.extend(found)
+                # Strip content:url() from CSS to avoid duplicates
+                cleaned = re.sub(
+                    r'content\s*:\s*url\([^)]+\)',
+                    'content:""',
+                    css_text,
+                )
+                css_path.write_text(cleaned, encoding="utf-8")
+
+        if not rules:
+            return
+
+        # Inject <img> into each XHTML file
+        for xhtml_path in oebps.glob("*.xhtml"):
+            if xhtml_path.name in ("nav.xhtml", "toc.ncx"):
+                continue
+            self._inject_images_into_xhtml(xhtml_path, rules)
+
+    def _extract_css_content_url_rules(
+        self, css_text: str, css_filename: str
+    ) -> list[tuple[str, str, bool]]:
+        """Extract (css_selector, image_src, is_before) from content:url() rules."""
+        results = []
+        for match in re.finditer(
+            r'([^{}]+?)\s*\{[^}]*?content\s*:\s*url\(["\']?([^)"\']+)["\']?\)[^}]*\}',
+            css_text,
+        ):
+            selector_raw = match.group(1).strip()
+            url_ref = match.group(2)
+            if url_ref.startswith("data:"):
+                continue
+
+            is_before = ":before" in selector_raw
+
+            # Strip pseudo-element to get the base selector
+            selector = re.sub(r"::?(before|after)", "", selector_raw).strip()
+            if not selector:
+                continue
+
+            # Image path relative to XHTML (which is in OEBPS)
+            # CSS is in OEBPS/Styles/, so Styles/{url_ref}
+            img_src = f"Styles/{url_ref}"
+
+            # Handle comma-separated selectors
+            for sel in selector.split(","):
+                sel = sel.strip()
+                if sel:
+                    results.append((sel, img_src, is_before))
+
+        return results
+
+    def _inject_images_into_xhtml(
+        self,
+        xhtml_path: Path,
+        rules: list[tuple[str, str, bool]],
+    ):
+        """Inject <img> tags into XHTML for matching CSS content:url() rules."""
+        text = xhtml_path.read_text(encoding="utf-8")
+        soup = BeautifulSoup(text, "html.parser")
+        modified = False
+
+        for selector, img_src, is_before in rules:
+            try:
+                elements = soup.select(selector)
+            except Exception:
+                continue
+
+            for el in elements:
+                img_tag = soup.new_tag("img", src=img_src, alt="")
+                img_tag["style"] = "max-width:100%;display:block;margin:0 auto"
+                if is_before:
+                    el.insert(0, img_tag)
+                else:
+                    el.append(img_tag)
+                modified = True
+
+        if modified:
+            xhtml_path.write_text(str(soup), encoding="utf-8")
 
     def detect_cover_image(self, soup) -> str | None:
         for img in soup.find_all("img"):
