@@ -19,8 +19,8 @@ class ChaptersPlugin(Plugin):
                     title=ch.get("title", ""),
                     filename=self._extract_filename(ch.get("reference_id", "")),
                     content_url=ch.get("content_url", ""),
-                    images=ch.get("related_assets", {}).get("images", []),
-                    stylesheets=ch.get("related_assets", {}).get("stylesheets", []),
+                    images=(ch.get("related_assets") or {}).get("images", []),
+                    stylesheets=(ch.get("related_assets") or {}).get("stylesheets", []),
                     virtual_pages=ch.get("virtual_pages"),
                     minutes_required=ch.get("minutes_required"),
                 ))
@@ -30,7 +30,12 @@ class ChaptersPlugin(Plugin):
 
     def fetch_toc(self, book_id: str) -> list[dict]:
         url = f"{config.API_V2}/epubs/urn:orm:book:{book_id}/table-of-contents/"
-        return self.http.get_json(url)
+        data = self.http.get_json(url)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            return data.get("results", [])
+        return []
 
     _FRONT_MATTER_KEYWORDS = ("cover", "halftitle", "titlepage", "title-page", "contents", "toc")
 
