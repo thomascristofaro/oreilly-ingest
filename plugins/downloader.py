@@ -193,6 +193,7 @@ class DownloaderPlugin(Plugin):
         report("fetching_chapters", 10)
         all_chapters = chapters_plugin.fetch_list(book_id)
         toc = chapters_plugin.fetch_toc(book_id)
+        all_chapters = chapters_plugin.reorder_by_toc(all_chapters, toc)
 
         # Filter chapters if selection provided
         if selected_chapters is not None:

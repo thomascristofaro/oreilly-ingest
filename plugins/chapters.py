@@ -26,11 +26,47 @@ class ChaptersPlugin(Plugin):
                 ))
             url = data.get("next")
 
-        return self._reorder_cover_first(chapters)
+        return chapters
 
     def fetch_toc(self, book_id: str) -> list[dict]:
         url = f"{config.API_V2}/epubs/urn:orm:book:{book_id}/table-of-contents/"
         return self.http.get_json(url)
+
+    _FRONT_MATTER_KEYWORDS = ("cover", "halftitle", "titlepage", "title-page", "contents", "toc")
+
+    def reorder_by_toc(self, chapters: list[ChapterInfo], toc: list[dict]) -> list[ChapterInfo]:
+        """Reorder chapters to match the TOC reading order."""
+        ordered_filenames = self._flatten_toc_filenames(toc)
+        if not ordered_filenames:
+            return chapters
+
+        chapter_map = {ch["filename"]: ch for ch in chapters}
+
+        ordered = []
+        for filename in ordered_filenames:
+            if filename in chapter_map:
+                ordered.append(chapter_map.pop(filename))
+
+        # Split remaining into front matter (before TOC content) and back matter (after)
+        front = []
+        back = []
+        for ch in chapters:
+            if ch["filename"] not in chapter_map:
+                continue
+            if self._is_front_matter(ch):
+                front.append(ch)
+            else:
+                back.append(ch)
+
+        return front + ordered + back
+
+    def _is_front_matter(self, ch: ChapterInfo) -> bool:
+        filename_lower = ch["filename"].lower()
+        title_lower = ch["title"].lower()
+        for keyword in self._FRONT_MATTER_KEYWORDS:
+            if keyword in filename_lower or keyword in title_lower:
+                return True
+        return False
 
     def fetch_content(self, content_url: str) -> str:
         return self.http.get_text(content_url)
@@ -40,17 +76,22 @@ class ChaptersPlugin(Plugin):
             return reference_id.split("-/")[1]
         return reference_id
 
-    def _reorder_cover_first(self, chapters: list[ChapterInfo]) -> list[ChapterInfo]:
-        """Reorder chapters to ensure cover comes first."""
-        cover_chapters: list[ChapterInfo] = []
-        other_chapters: list[ChapterInfo] = []
+    def _flatten_toc_filenames(self, toc_items: list[dict]) -> list[str]:
+        """Extract ordered, deduplicated filenames from the TOC tree."""
+        result: list[str] = []
+        seen: set[str] = set()
 
-        for ch in chapters:
-            filename_lower = ch["filename"].lower()
-            title_lower = ch["title"].lower()
-            if "cover" in filename_lower or "cover" in title_lower:
-                cover_chapters.append(ch)
-            else:
-                other_chapters.append(ch)
+        def walk(items: list[dict]):
+            for item in items:
+                ref_id = item.get("reference_id", "")
+                if ref_id:
+                    filename = self._extract_filename(ref_id)
+                    if filename and filename not in seen:
+                        result.append(filename)
+                        seen.add(filename)
+                children = item.get("children", [])
+                if children:
+                    walk(children)
 
-        return cover_chapters + other_chapters
+        walk(toc_items)
+        return result
