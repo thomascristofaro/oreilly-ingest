@@ -3,6 +3,7 @@
 import json
 import re
 import threading
+import traceback
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -308,6 +309,7 @@ class DownloaderHandler(SimpleHTTPRequestHandler):
                 }
             )
         except Exception as e:
+            traceback.print_exc()
             error_msg = str(e)
             if "cancelled" in error_msg.lower():
                 self._set_progress({"status": "cancelled", "error": error_msg})
