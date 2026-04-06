@@ -12,7 +12,7 @@ class HtmlProcessorPlugin(Plugin):
         if not content_div:
             content_div = soup.body or soup
 
-        self._convert_svg_images(content_div)
+        self._convert_svg_images(content_div, soup)
 
         if skip_images:
             self._remove_images(content_div)
@@ -30,8 +30,8 @@ class HtmlProcessorPlugin(Plugin):
         for img in soup.find_all("img"):
             img.decompose()
 
-    def _convert_svg_images(self, soup):
-        for image_tag in soup.find_all("image"):
+    def _convert_svg_images(self, content_div, soup):
+        for image_tag in content_div.find_all("image"):
             href = image_tag.get("href") or image_tag.get("xlink:href")
             if not href:
                 continue
