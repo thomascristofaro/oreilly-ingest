@@ -107,9 +107,8 @@ class PdfPlugin(Plugin):
         original_css = self._load_css_files(oebps, css_files)
 
         pdf_paths = []
-        sorted_chapters = sorted(chapters, key=lambda c: c.get("order", 0))
 
-        for i, chapter in enumerate(sorted_chapters):
+        for i, chapter in enumerate(chapters):
             xhtml_path = oebps / chapter["filename"].replace(".html", ".xhtml")
             if not xhtml_path.exists():
                 continue
@@ -164,9 +163,8 @@ class PdfPlugin(Plugin):
         toc_html = self._generate_toc_html(toc, chapters)
 
         chapters_html_parts = []
-        sorted_chapters = sorted(chapters, key=lambda c: c.get("order", 0))
 
-        for chapter in sorted_chapters:
+        for chapter in chapters:
             xhtml_path = oebps / chapter["filename"].replace(".html", ".xhtml")
             if not xhtml_path.exists():
                 continue
