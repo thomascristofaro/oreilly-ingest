@@ -1,10 +1,13 @@
 import re
+import shutil
+from pathlib import Path
+
 from bs4 import BeautifulSoup
 from .base import Plugin
 
 
 class HtmlProcessorPlugin(Plugin):
-    def process(self, html: str, book_id: str, skip_images: bool = False) -> tuple[str, list[str]]:
+    def process(self, html: str, book_id: str, skip_images: bool = False, path_prefix: str = "") -> tuple[str, list[str]]:
         soup = BeautifulSoup(html, "lxml")
         images_found = []
 
@@ -12,13 +15,13 @@ class HtmlProcessorPlugin(Plugin):
         if not content_div:
             content_div = soup.body or soup
 
-        self._convert_svg_images(content_div)
+        self._convert_svg_images(content_div, soup)
 
         if skip_images:
             self._remove_images(content_div)
             images_found = []
         else:
-            images_found = self._rewrite_image_links(content_div)
+            images_found = self._rewrite_image_links(content_div, path_prefix)
 
         self._rewrite_href_links(content_div, book_id)
         self._handle_data_template_styles(content_div)
@@ -30,8 +33,8 @@ class HtmlProcessorPlugin(Plugin):
         for img in soup.find_all("img"):
             img.decompose()
 
-    def _convert_svg_images(self, soup):
-        for image_tag in soup.find_all("image"):
+    def _convert_svg_images(self, content_div, soup):
+        for image_tag in content_div.find_all("image"):
             href = image_tag.get("href") or image_tag.get("xlink:href")
             if not href:
                 continue
@@ -43,7 +46,7 @@ class HtmlProcessorPlugin(Plugin):
             else:
                 image_tag.replace_with(img_tag)
 
-    def _rewrite_image_links(self, soup) -> list[str]:
+    def _rewrite_image_links(self, soup, path_prefix: str = "") -> list[str]:
         images = []
         for img in soup.find_all("img"):
             src = img.get("src", "")
@@ -51,7 +54,7 @@ class HtmlProcessorPlugin(Plugin):
                 continue
 
             filename = src.split("/")[-1]
-            img["src"] = f"../Images/{filename}"
+            img["src"] = f"{path_prefix}Images/{filename}"
             images.append(src)
 
         return images
@@ -102,6 +105,113 @@ body{{margin:1em;background-color:transparent!important;}}
 {content}
 </body>
 </html>'''
+
+    def inline_css_content_images(self, oebps: Path):
+        """Replace CSS content:url() pseudo-element images with inline <img> tags.
+
+        Apple Books doesn't support content:url() in pseudo-elements.
+        This parses downloaded CSS for such rules, copies the referenced images
+        to Images/ (so they appear in the manifest), injects <img> tags into
+        matching XHTML elements, and strips the CSS rules to avoid duplicates.
+        """
+        styles_dir = oebps / "Styles"
+        images_dir = oebps / "Images"
+        if not styles_dir.exists():
+            return
+
+        # Collect rules from all CSS files
+        rules = []  # (selector, img_src_relative_to_xhtml, is_before)
+        for css_path in sorted(styles_dir.glob("Style*.css")):
+            css_text = css_path.read_text(encoding="utf-8")
+            found = self._extract_css_content_url_rules(css_text, styles_dir, images_dir)
+            if found:
+                rules.extend(found)
+                # Strip content:url() from CSS to avoid duplicates
+                cleaned = re.sub(
+                    r'content\s*:\s*url\([^)]+\)',
+                    'content:""',
+                    css_text,
+                )
+                css_path.write_text(cleaned, encoding="utf-8")
+
+        if not rules:
+            return
+
+        # Inject <img> into each XHTML file
+        for xhtml_path in oebps.glob("*.xhtml"):
+            if xhtml_path.name in ("nav.xhtml", "toc.ncx"):
+                continue
+            self._inject_images_into_xhtml(xhtml_path, rules)
+
+    def _extract_css_content_url_rules(
+        self, css_text: str, styles_dir: Path, images_dir: Path
+    ) -> list[tuple[str, str, bool]]:
+        """Extract (css_selector, image_src, is_before) from content:url() rules.
+
+        Copies referenced images to Images/ so they appear in the EPUB manifest.
+        """
+        results = []
+        for match in re.finditer(
+            r'([^{}]+?)\s*\{[^}]*?content\s*:\s*url\(["\']?([^)"\']+)["\']?\)[^}]*\}',
+            css_text,
+        ):
+            selector_raw = match.group(1).strip()
+            url_ref = match.group(2)
+            if url_ref.startswith("data:"):
+                continue
+
+            is_before = ":before" in selector_raw
+
+            # Strip pseudo-element to get the base selector
+            selector = re.sub(r"::?(before|after)", "", selector_raw).strip()
+            if not selector:
+                continue
+
+            # Copy image from Styles/css_assets/ to Images/ for manifest inclusion
+            src_file = styles_dir / url_ref
+            filename = Path(url_ref).name
+            if src_file.exists():
+                images_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_file, images_dir / filename)
+
+            # Reference from Images/ (relative to XHTML in OEBPS)
+            img_src = f"Images/{filename}"
+
+            # Handle comma-separated selectors
+            for sel in selector.split(","):
+                sel = sel.strip()
+                if sel:
+                    results.append((sel, img_src, is_before))
+
+        return results
+
+    def _inject_images_into_xhtml(
+        self,
+        xhtml_path: Path,
+        rules: list[tuple[str, str, bool]],
+    ):
+        """Inject <img> tags into XHTML for matching CSS content:url() rules."""
+        text = xhtml_path.read_text(encoding="utf-8")
+        soup = BeautifulSoup(text, "html.parser")
+        modified = False
+
+        for selector, img_src, is_before in rules:
+            try:
+                elements = soup.select(selector)
+            except Exception:
+                continue
+
+            for el in elements:
+                img_tag = soup.new_tag("img", src=img_src, alt="")
+                img_tag["style"] = "max-width:100%;display:block;margin:0 auto"
+                if is_before:
+                    el.insert(0, img_tag)
+                else:
+                    el.append(img_tag)
+                modified = True
+
+        if modified:
+            xhtml_path.write_text(str(soup), encoding="utf-8")
 
     def detect_cover_image(self, soup) -> str | None:
         for img in soup.find_all("img"):

@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Callable
 
@@ -55,6 +56,36 @@ class AssetsPlugin(Plugin):
             if progress_callback:
                 progress_callback(i + 1, total)
         return downloaded
+
+    def download_css_assets(self, css_urls: list[str], oebps: Path):
+        """Download assets referenced by url() in CSS files."""
+        styles_dir = oebps / "Styles"
+        if not styles_dir.exists():
+            return
+
+        for i, css_url in enumerate(css_urls):
+            css_path = styles_dir / f"Style{i:02d}.css"
+            if not css_path.exists():
+                continue
+
+            css_text = css_path.read_text(encoding="utf-8")
+            for match in re.finditer(r'url\(["\']?([^)"\']+)["\']?\)', css_text):
+                ref = match.group(1)
+                if ref.startswith("data:") or ref.startswith("http"):
+                    continue
+
+                # Resolve relative to CSS file location, download from source
+                save_path = (styles_dir / ref).resolve()
+                if save_path.exists():
+                    continue
+
+                # Build download URL from the CSS source URL
+                css_base = css_url.rsplit("/", 1)[0]
+                asset_url = f"{css_base}/{ref}"
+                try:
+                    self.download_image(asset_url, save_path)
+                except Exception:
+                    pass
 
     def get_cover_url(self, book_id: str) -> str:
         return f"https://learning.oreilly.com/library/cover/{book_id}/"
