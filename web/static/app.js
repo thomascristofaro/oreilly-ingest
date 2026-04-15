@@ -207,7 +207,7 @@ function createBookCardHTML(book) {
                         </h4>
                         <div class="format-options flex flex-wrap gap-1.5">
                             <label class="format-option cursor-pointer">
-                                <input type="radio" name="format" value="markdown" checked class="sr-only peer">
+                                <input type="checkbox" name="format" value="markdown" checked class="sr-only peer">
                                 <span class="flex items-center gap-1.5 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-medium text-zinc-600 transition-all peer-checked:border-oreilly-blue peer-checked:bg-oreilly-blue-light peer-checked:text-oreilly-blue-dark hover:bg-white hover:border-zinc-300">
                                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                                         <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
@@ -218,7 +218,7 @@ function createBookCardHTML(book) {
                                 </span>
                             </label>
                             <label class="format-option cursor-pointer">
-                                <input type="radio" name="format" value="json" class="sr-only peer">
+                                <input type="checkbox" name="format" value="json" class="sr-only peer">
                                 <span class="flex items-center gap-1.5 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-medium text-zinc-600 transition-all peer-checked:border-oreilly-blue peer-checked:bg-oreilly-blue-light peer-checked:text-oreilly-blue-dark hover:bg-white hover:border-zinc-300">
                                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                                         <path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/>
@@ -228,7 +228,7 @@ function createBookCardHTML(book) {
                                 </span>
                             </label>
                             <label class="format-option cursor-pointer">
-                                <input type="radio" name="format" value="plaintext" class="sr-only peer">
+                                <input type="checkbox" name="format" value="plaintext" class="sr-only peer">
                                 <span class="flex items-center gap-1.5 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-medium text-zinc-600 transition-all peer-checked:border-oreilly-blue peer-checked:bg-oreilly-blue-light peer-checked:text-oreilly-blue-dark hover:bg-white hover:border-zinc-300">
                                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -239,7 +239,7 @@ function createBookCardHTML(book) {
                                 </span>
                             </label>
                             <label class="format-option cursor-pointer">
-                                <input type="radio" name="format" value="pdf" class="sr-only peer">
+                                <input type="checkbox" name="format" value="pdf" class="sr-only peer">
                                 <span class="flex items-center gap-1.5 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-medium text-zinc-600 transition-all peer-checked:border-oreilly-blue peer-checked:bg-oreilly-blue-light peer-checked:text-oreilly-blue-dark hover:bg-white hover:border-zinc-300">
                                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -251,7 +251,7 @@ function createBookCardHTML(book) {
                                 </span>
                             </label>
                             <label class="format-option cursor-pointer relative">
-                                <input type="radio" name="format" value="chunks" class="sr-only peer">
+                                <input type="checkbox" name="format" value="chunks" class="sr-only peer">
                                 <span class="flex items-center gap-1.5 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-medium text-zinc-600 transition-all peer-checked:border-oreilly-blue peer-checked:bg-oreilly-blue-light peer-checked:text-oreilly-blue-dark hover:bg-white hover:border-zinc-300">
                                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                                         <rect x="3" y="3" width="7" height="7"/>
@@ -264,7 +264,7 @@ function createBookCardHTML(book) {
                                 <span class="absolute -top-1.5 -right-1.5 text-[0.5rem] font-bold uppercase px-1 py-px bg-emerald-500 text-white rounded shadow-sm peer-checked:bg-oreilly-blue">RAG</span>
                             </label>
                             <label class="format-option cursor-pointer">
-                                <input type="radio" name="format" value="epub" class="sr-only peer">
+                                <input type="checkbox" name="format" value="epub" class="sr-only peer">
                                 <span class="flex items-center gap-1.5 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-medium text-zinc-600 transition-all peer-checked:border-oreilly-blue peer-checked:bg-oreilly-blue-light peer-checked:text-oreilly-blue-dark hover:bg-white hover:border-zinc-300">
                                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                                         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
@@ -708,17 +708,18 @@ function selectAllChapters(cardElement, selectAll) {
 async function download(cardElement) {
     const bookId = cardElement.dataset.bookId;
 
-    // Get selected format
-    const formatRadio = cardElement.querySelector('input[name="format"]:checked');
-    const format = formatRadio ? formatRadio.value : null;
-
-    if (!format) {
+    // Get selected formats (multiple checkboxes)
+    const formatCheckboxes = cardElement.querySelectorAll('input[name="format"]:checked');
+    if (formatCheckboxes.length === 0) {
         // Shake animation for format options
         const formatOptions = cardElement.querySelector('.format-options');
         formatOptions.classList.add('animate-shake');
         setTimeout(() => formatOptions.classList.remove('animate-shake'), 500);
         return;
     }
+
+    // Collect all selected formats into an array
+    const selectedFormats = Array.from(formatCheckboxes).map(cb => cb.value);
 
     // Get chapters scope (all or select)
     const chaptersScopeRadio = cardElement.querySelector('input[name="chapters-scope"]:checked');
@@ -728,11 +729,14 @@ async function download(cardElement) {
     const outputStyleRadio = cardElement.querySelector('input[name="output-style"]:checked');
     const outputStyle = outputStyleRadio ? outputStyleRadio.value : 'combined';
 
-    // Determine final format string based on format + output style
-    let finalFormat = format;
-    if (outputStyle === 'separate' && !BOOK_ONLY_FORMATS.includes(format)) {
-        // For separate output, append -chapters to format (e.g., pdf-chapters, markdown-chapters)
-        finalFormat = `${format}-chapters`;
+    // Determine final formats array based on output style
+    let finalFormats = [];
+    for (const format of selectedFormats) {
+        if (outputStyle === 'separate' && !BOOK_ONLY_FORMATS.includes(format)) {
+            finalFormats.push(`${format}-chapters`);
+        } else {
+            finalFormats.push(format);
+        }
     }
 
     // Get selected chapters if chapters scope is 'select'
@@ -752,7 +756,6 @@ async function download(cardElement) {
         if (checkedBoxes.length < chapterCheckboxes.length) {
             selectedChapters = Array.from(checkedBoxes).map(cb => parseInt(cb.dataset.index));
         }
-        // Note: separate/combined is determined by outputStyle, not by chapter selection
     }
 
     const progressSection = cardElement.querySelector('.progress-section');
@@ -770,14 +773,14 @@ async function download(cardElement) {
     const outputDirInput = cardElement.querySelector('.output-dir-input');
     const outputDir = outputDirInput.value.trim();
 
-    const requestBody = { book_id: bookId, format: finalFormat };
+    const requestBody = { book_id: bookId, formats: finalFormats };
     if (selectedChapters !== null) {
         requestBody.chapters = selectedChapters;
     }
     if (outputDir && outputDir !== defaultOutputDir) {
         requestBody.output_dir = outputDir;
     }
-    if (format === 'chunks') {
+    if (selectedFormats.includes('chunks')) {
         const chunkSize = parseInt(cardElement.querySelector('.chunk-size-input').value) || 4000;
         const chunkOverlap = parseInt(cardElement.querySelector('.chunk-overlap-input').value) || 200;
         requestBody.chunking = {

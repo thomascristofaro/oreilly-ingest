@@ -35,7 +35,9 @@ class EpubPlugin(Plugin):
         self._create_epub_zip(output_dir, epub_path)
 
         # Clean up build artifacts
-        self._cleanup_build_artifacts(output_dir)
+        # Removed because can interfere with pdf generation if both plugins are used together. 
+        # The output directory is temporary and will be deleted after processing.
+        # self._cleanup_build_artifacts(output_dir)
 
         return epub_path
 
