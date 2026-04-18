@@ -96,8 +96,3 @@ Register in `core/kernel.py`:
 ```python
 kernel.register("new_plugin", NewPlugin())
 ```
-
-## Reference Documentation
-
-- `TECHNICAL_DOCUMENTATION.md` - Complete V1 API specification, EPUB generation details
-- `API_V2_DOCUMENTATION.md` - V2 API endpoints with differences from V1
