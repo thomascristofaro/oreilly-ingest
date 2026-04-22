@@ -7,6 +7,7 @@ import * as apiService from './services/apiService.js';
 import { initCookieModal } from './components/CookieModalComponent.js';
 import { initSearch } from './components/SearchComponent.js';
 import { createBookCardHTML, setupBookCardEvents, collapseBook } from './components/BookCardComponent.js';
+import { initSidebar } from './components/SidebarComponent.js';
 import * as stateService from './services/stateService.js';
 
 let { currentExpandedCard, selectedResultIndex, defaultOutputDir, chaptersCache } = stateService.getState();
@@ -28,35 +29,7 @@ function updateSelectedResult() {
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize services and components
     initCookieModal();
-
-    initSearch({
-        onResultsRendered(results) {
-            const container = document.getElementById('search-results');
-            container.innerHTML = '';
-            currentExpandedCard = null;
-            selectedResultIndex = -1;
-
-            if (!results || results.length === 0) {
-                container.innerHTML = `
-                    <div class="text-center py-16 text-zinc-500">
-                        <p class="text-lg">No books found</p>
-                        <p class="text-sm mt-2 text-zinc-400">Try a different search term or ISBN</p>
-                    </div>
-                `;
-                return;
-            }
-
-            for (const book of results) {
-                const div = document.createElement('article');
-                div.className = 'book-card group bg-white rounded-xl border border-zinc-200 overflow-hidden transition-all duration-200 hover:border-zinc-300 hover:shadow-card-hover';
-                div.dataset.bookId = book.id;
-                div.innerHTML = createBookCardHTML(book);
-
-                setupBookCardEvents(div, book);
-                container.appendChild(div);
-            }
-        }
-    });
+    initSidebar();
 
     // Auth
     apiService.checkAuth().then(data => {
@@ -135,6 +108,30 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
+
+    // Sidebar toggle (hamburger)
+    const toggleBtn = document.getElementById('sidebar-toggle');
+    const sidebar = document.getElementById('sidebar');
+    const body = document.body;
+    if (toggleBtn && sidebar) {
+        const applyCollapsed = (collapsed) => {
+            if (collapsed) {
+                sidebar.classList.add('w-0');
+                sidebar.classList.remove('w-56');
+                toggleBtn.setAttribute('aria-expanded', 'false');
+            } else {
+                sidebar.classList.remove('w-0');
+                sidebar.classList.add('w-56');
+                toggleBtn.setAttribute('aria-expanded', 'true');
+            }
+        };
+        let collapsed = false;
+        applyCollapsed(collapsed);
+        toggleBtn.addEventListener('click', () => {
+            collapsed = !collapsed;
+            applyCollapsed(collapsed);
+        });
+    }
 });
 
 stateService.subscribe((newState) => {

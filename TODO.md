@@ -1,39 +1,4 @@
-## Refactor tasks
-
-### 1. Refactor frontend structure
-Refactor the frontend into `components`, `services`, `utils`, and a lightweight `app.js` entry point.
-
-#### Requirements
-- Move UI rendering and local UI behavior into components.
-- Move API access, state handling, and download orchestration into services.
-- Move shared helper functions into utils.
-- Keep `app.js` focused on initialization and wiring only.
-- Preserve the current behavior during the refactor.
-- Keep the frontend framework-free.
-- Keep the current visual style unless a specific UI improvement is required.
-
-### 2. Add left sidebar navigation
-Replace or extend the current top-level navigation with a left sidebar menu.
-
-#### Sidebar items
-- Library
-- Search
-- Downloads
-
-#### Requirements
-- The sidebar must remain visible across the application shell.
-- The active item must be visually highlighted.
-- Navigation must work without a full page reload.
-- Keyboard accessibility must be preserved.
-- Mobile behavior can be simplified, but the structure must support a responsive adaptation later.
-
-### 3. Make Search the home page
-The **Search** section must become the default landing page of the frontend.
-
-#### Requirements
-- Opening the frontend must show the Search page by default.
-- Existing search behavior should continue to work after the refactor.
-- Existing book card interactions must remain available from the Search page.
+## TODO Tasks
 
 ### 4. Create the Downloads page
 Create a **Downloads** page that represents the current backend queue state.
