@@ -543,6 +543,27 @@ function selectAllChapters(cardElement, selectAll) {
     updateChapterCount(cardElement);
 }
 
+async function browseOutputDir(cardElement) {
+    const browseBtn = cardElement.querySelector('.browse-btn');
+    const outputDirInput = cardElement.querySelector('.output-dir-input');
+
+    browseBtn.disabled = true;
+    browseBtn.textContent = 'Opening...';
+
+    try {
+        const data = await apiService.browseOutputDir();
+
+        if (data.success && data.path) {
+            outputDirInput.value = data.path;
+        }
+    } catch (err) {
+        console.error('Browse request failed:', err);
+    }
+
+    browseBtn.disabled = false;
+    browseBtn.textContent = 'Browse';
+}
+
 async function download(cardElement) {
     const bookId = cardElement.dataset.bookId;
 
@@ -651,21 +672,24 @@ async function download(cardElement) {
         progressSection.classList.add('hidden');
         cardElement.querySelector('.result-section').classList.remove('hidden');
 
-        let filesHTML = '';
-        if (data.epub) filesHTML += createFileResultHTML('EPUB', data.epub);
+        const resultFilesContainer = cardElement.querySelector('.result-files');
+        resultFilesContainer.innerHTML = '';
+
+        if (data.epub) resultFilesContainer.appendChild(createFileResultHTML('EPUB', data.epub));
         if (data.pdf) {
             if (Array.isArray(data.pdf)) {
-                filesHTML += `<div class="flex items-center gap-3 px-4 py-3 bg-zinc-50 rounded-lg text-sm"><span class="font-medium text-zinc-700 min-w-[70px]">PDF</span><span class="flex-1 font-mono text-xs text-zinc-500 truncate">${data.pdf.length} chapter files</span></div>`;
+                const div = document.createElement('div');
+                div.className = 'flex items-center gap-3 px-4 py-3 bg-zinc-50 rounded-lg text-sm';
+                div.innerHTML = `<span class="font-medium text-zinc-700 min-w-[70px]">PDF</span><span class="flex-1 font-mono text-xs text-zinc-500 truncate">${data.pdf.length} chapter files</span>`;
+                resultFilesContainer.appendChild(div);
             } else {
-                filesHTML += createFileResultHTML('PDF', data.pdf);
+                resultFilesContainer.appendChild(createFileResultHTML('PDF', data.pdf));
             }
         }
-        if (data.markdown) filesHTML += createFileResultHTML('Markdown', data.markdown);
-        if (data.plaintext) filesHTML += createFileResultHTML('Plain Text', data.plaintext);
-        if (data.json) filesHTML += createFileResultHTML('JSON', data.json);
-        if (data.chunks) filesHTML += createFileResultHTML('Chunks', data.chunks);
-
-        cardElement.querySelector('.result-files').innerHTML = filesHTML;
+        if (data.markdown) resultFilesContainer.appendChild(createFileResultHTML('Markdown', data.markdown));
+        if (data.plaintext) resultFilesContainer.appendChild(createFileResultHTML('Plain Text', data.plaintext));
+        if (data.json) resultFilesContainer.appendChild(createFileResultHTML('JSON', data.json));
+        if (data.chunks) resultFilesContainer.appendChild(createFileResultHTML('Chunks', data.chunks));
 
         const downloadBtn = cardElement.querySelector('.download-btn');
         const cancelBtn = cardElement.querySelector('.cancel-btn');
@@ -710,11 +734,33 @@ function formatETA(seconds) {
 
 function createFileResultHTML(label, path) {
     const escapedPath = path.replace(/'/g, "\\'");
-    return `
-        <div class="flex items-center gap-3 px-4 py-3 bg-zinc-50 rounded-lg text-sm">
-            <span class="font-medium text-zinc-700 min-w-[70px]">${label}</span>
-            <span class="flex-1 font-mono text-xs text-zinc-500 truncate" title="${path}">${path}</span>
-            <button class="px-2 py-1 text-xs font-medium text-oreilly-blue hover:bg-oreilly-blue-light rounded transition-colors" onclick="revealFile('${escapedPath}')">Reveal</button>
-        </div>
-    `;
+    const container = document.createElement('div');
+    container.className = 'flex items-center gap-3 px-4 py-3 bg-zinc-50 rounded-lg text-sm';
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'font-medium text-zinc-700 min-w-[70px]';
+    labelSpan.textContent = label;
+
+    const pathSpan = document.createElement('span');
+    pathSpan.className = 'flex-1 font-mono text-xs text-zinc-500 truncate';
+    pathSpan.title = path;
+    pathSpan.textContent = path;
+
+    const button = document.createElement('button');
+    button.className = 'reveal-file-btn px-2 py-1 text-xs font-medium text-oreilly-blue hover:bg-oreilly-blue-light rounded transition-colors';
+    button.textContent = 'Reveal';
+    button.dataset.path = path;
+    button.addEventListener('click', async () => {
+        try {
+            await apiService.revealFile(path);
+        } catch (err) {
+            console.error('Failed to reveal file:', err);
+        }
+    });
+
+    container.appendChild(labelSpan);
+    container.appendChild(pathSpan);
+    container.appendChild(button);
+
+    return container;
 }
