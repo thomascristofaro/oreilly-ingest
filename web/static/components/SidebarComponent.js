@@ -1,23 +1,10 @@
 import { initSearch, createSearchHTML } from './SearchComponent.js';
-import { createBookCardHTML, setupBookCardEvents, collapseBook } from './BookCardComponent.js';
-import * as stateService from '../services/stateService.js';
+import { createBookCardHTML, setupBookCardEvents } from './BookCardComponent.js';
+import { createDownloadsHTML, initDownloads } from './DownloadsComponent.js';
+import { createLibraryHTML, initLibrary } from './LibraryComponent.js';
 
 let currentExpandedCard = null;
 let selectedResultIndex = -1;
-
-function updateSelectedResult() {
-    const results = document.querySelectorAll('.book-card');
-    results.forEach((r, i) => {
-        if (i === selectedResultIndex) {
-            r.classList.add('ring-2', 'ring-oreilly-blue/30');
-        } else {
-            r.classList.remove('ring-2', 'ring-oreilly-blue/30');
-        }
-    });
-    if (selectedResultIndex >= 0 && results[selectedResultIndex]) {
-        results[selectedResultIndex].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-}
 
 function createSidebarItems() {
     const sidebar = document.getElementById('sidebar');
@@ -43,18 +30,19 @@ function createSidebarItems() {
 
 let activePage = 'search';
 
-function setActivePage(pageId) {
+export function setActivePage(pageId) {
     activePage = pageId;
 
     const sidebar = document.getElementById('sidebar');
-    if (!sidebar) return;
-    Array.from(sidebar.children).forEach(btn => {
-        if (btn.id === `sidebar-${pageId}`) {
-            btn.classList.add('bg-oreilly-blue/20', 'font-semibold', 'text-oreilly-blue');
-        } else {
-            btn.classList.remove('bg-oreilly-blue/20', 'font-semibold', 'text-oreilly-blue');
-        }
-    });
+    if (sidebar) {
+        Array.from(sidebar.children).forEach(btn => {
+            if (btn.id === `sidebar-${pageId}`) {
+                btn.classList.add('bg-oreilly-blue/20', 'font-semibold', 'text-oreilly-blue');
+            } else {
+                btn.classList.remove('bg-oreilly-blue/20', 'font-semibold', 'text-oreilly-blue');
+            }
+        });
+    }
 
     const mainContent = document.getElementById('main-content');
     if (!mainContent) return;
@@ -92,10 +80,12 @@ function setActivePage(pageId) {
             });
             break;
         case 'library':
-            mainContent.innerHTML = `<div class="p-4 text-zinc-600">Library page content coming soon.</div>`;
+            mainContent.innerHTML = createLibraryHTML();
+            initLibrary();
             break;
         case 'downloads':
-            mainContent.innerHTML = `<div class="p-4 text-zinc-600">Downloads page content coming soon.</div>`;
+            mainContent.innerHTML = createDownloadsHTML();
+            initDownloads();
             break;
         case 'settings':
             mainContent.innerHTML = `<div class="p-4 text-zinc-600">Settings page content coming soon.</div>`;

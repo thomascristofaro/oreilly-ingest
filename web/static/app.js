@@ -6,7 +6,7 @@
 import * as apiService from './services/apiService.js';
 import { initCookieModal } from './components/CookieModalComponent.js';
 import { initSearch } from './components/SearchComponent.js';
-import { createBookCardHTML, setupBookCardEvents, collapseBook } from './components/BookCardComponent.js';
+import { createBookCardHTML, setupBookCardEvents, collapseBook, expandBook } from './components/BookCardComponent.js';
 import { initSidebar } from './components/SidebarComponent.js';
 import * as stateService from './services/stateService.js';
 
