@@ -1,5 +1,5 @@
 // DownloadsComponent.js
-// Renders the Downloads page using the mock downloads service.
+// Renders the Downloads page using the real downloads service.
 
 import * as downloads from '../services/downloadsService.js';
 
@@ -24,6 +24,7 @@ function itemRowHTML(item, activeId) {
         <div class="flex items-center gap-2">
           <h4 class="text-sm font-semibold text-zinc-800 truncate">${item.title}</h4>
           ${statusBadge(item.status)}
+          ${item.message ? `<span class=\"text-xs text-zinc-500 truncate\">${item.message}</span>` : ''}
           ${isActive ? '<span class="text-[10px] uppercase font-bold text-oreilly-blue">ACTIVE</span>' : ''}
         </div>
         <p class="text-xs text-zinc-500 truncate">${(item.authors || []).join(', ')}</p>
@@ -33,7 +34,7 @@ function itemRowHTML(item, activeId) {
       </div>
       <div class="flex items-center gap-2">
         ${item.status === 'queued' || item.status === 'running' ? `<button data-action="cancel" data-id="${item.id}" class="px-3 py-1.5 text-xs border border-zinc-300 rounded hover:bg-zinc-50">Cancel</button>` : ''}
-        ${item.status === 'failed' ? `<button data-action="retry" data-id="${item.id}" class="px-3 py-1.5 text-xs border border-zinc-300 rounded hover:bg-zinc-50">Retry</button>` : ''}
+        ${item.status === 'failed' || item.status === 'cancelled' ? `<button data-action="retry" data-id="${item.id}" class="px-3 py-1.5 text-xs border border-zinc-300 rounded hover:bg-zinc-50">Retry</button>` : ''}
         ${item.status === 'completed' || item.status === 'cancelled' ? `<button data-action="remove" data-id="${item.id}" class="px-3 py-1.5 text-xs border border-zinc-300 rounded hover:bg-zinc-50">Remove</button>` : ''}
       </div>
     </div>
@@ -44,14 +45,13 @@ export function createDownloadsHTML() {
   return `
     <section class="mb-6">
       <h2 class="text-xl font-semibold mb-1">Downloads</h2>
-      <p class="text-sm text-zinc-500">One at a time. Queue persists while this page is closed (mocked).</p>
+      <p class="text-sm text-zinc-500">One at a time. Queue persists while this page is closed.</p>
     </section>
     <section id="downloads-active" class="mb-6 hidden"></section>
     <section>
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-sm font-semibold text-zinc-700">Queue</h3>
         <div class="flex items-center gap-2">
-          <button id="downloads-enqueue-sample" class="px-3 py-1.5 text-xs border border-zinc-300 rounded hover:bg-zinc-50">Enqueue sample</button>
           <button id="downloads-refresh" class="px-3 py-1.5 text-xs border border-zinc-300 rounded hover:bg-zinc-50">Refresh</button>
         </div>
       </div>
@@ -71,9 +71,37 @@ export function initDownloads() {
   const activeEl = document.getElementById('downloads-active');
   const historyEl = document.getElementById('downloads-history');
   const refreshBtn = document.getElementById('downloads-refresh');
-  const enqueueBtn = document.getElementById('downloads-enqueue-sample');
+  let pollInterval = null;
 
-  async function render() {
+  async function render(progressOnly = false) {
+    if (progressOnly) {
+      // Only refresh the active item's progress to reduce load
+      // Stop if we navigated away from the Downloads page
+      if (!activeEl || !activeEl.isConnected) {
+        if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+        return;
+      }
+      const { active } = await downloads.getActive();
+      const activeId = active?.id ?? null;
+      if (active) {
+        activeEl.classList.remove('hidden');
+        activeEl.innerHTML = `
+          <div class="p-4 border border-oreilly-blue rounded-xl bg-oreilly-blue-light/40">
+            <div class="flex items-center gap-3">
+              <span class="text-[10px] uppercase font-bold text-oreilly-blue">Active</span>
+              ${statusBadge('running')}
+            </div>
+            <div class="mt-2">${itemRowHTML(active, activeId)}</div>
+          </div>`;
+      } else {
+        activeEl.classList.add('hidden');
+        activeEl.innerHTML = '';
+        // No active download anymore - stop polling
+        if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+      }
+      return;
+    }
+
     const [{ items, activeId }, history] = await Promise.all([
       downloads.getQueue(),
       downloads.getHistory()
@@ -114,6 +142,17 @@ export function initDownloads() {
     historyEl.querySelectorAll('[data-action],button[data-action]').forEach(btn => {
       btn.addEventListener('click', onAction);
     });
+
+    // Start/stop polling depending on page presence and active job
+    if (!activeEl || !activeEl.isConnected) {
+      if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+    } else if (active) {
+      if (!pollInterval) {
+        pollInterval = setInterval(() => render(true), 1000);
+      }
+    } else {
+      if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+    }
   }
 
   async function onAction(e) {
@@ -131,21 +170,9 @@ export function initDownloads() {
     }
   }
 
-  refreshBtn.addEventListener('click', render);
-  enqueueBtn.addEventListener('click', async () => {
-    await downloads.enqueue({
-      bookId: '9780000000000',
-      title: 'Sample Book',
-      authors: ['John Doe'],
-      cover_url: 'https://learning.oreilly.com/covers/urn:orm:book:9781098156371/200w/',
-      formats: ['markdown'],
-      outputDir: '/output'
-    });
-    render();
-  });
+  // Ensure full refresh (queue + history), avoid passing the event object as progressOnly
+  refreshBtn.addEventListener('click', () => render(false));
 
   render();
-  // polling refresh every 1s
-  const interval = setInterval(render, 1000);
-  // Stop polling when navigating away (optional: observe main-content child changes)
+  // Polling starts/stops automatically based on page and active job.
 }

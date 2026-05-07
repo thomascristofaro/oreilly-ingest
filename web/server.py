@@ -7,6 +7,7 @@ import traceback
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+import time
 
 from core import Kernel, create_default_kernel
 from plugins import ChunkConfig
@@ -17,10 +18,14 @@ import config
 class DownloaderHandler(SimpleHTTPRequestHandler):
     """HTTP request handler for the downloader web interface."""
 
-    kernel: Kernel = None
+    from typing import Optional, Any
+    kernel: Any = None
     download_progress: dict = {}
     _progress_lock = threading.Lock()
     _cancel_requested: bool = False
+
+    # Queue manager (initialized in create_server)
+    queue: Any = None
 
     @classmethod
     def _set_progress(cls, data: dict):
@@ -58,6 +63,18 @@ class DownloaderHandler(SimpleHTTPRequestHandler):
             self._handle_get_settings()
         elif path == "/api/formats":
             self._handle_formats()
+        # Downloads queue API (real backend)
+        elif path == "/api/downloads/queue":
+            self._handle_queue_list()
+        elif path == "/api/downloads/history":
+            self._handle_history_list()
+        elif path == "/api/downloads/active":
+            self._handle_active_item()
+        # Library API (real backend)
+        elif path == "/api/library":
+            self._handle_library_list()
+        elif match := re.match(r"/api/library/(\d+)$", path):
+            self._handle_library_one(match.group(1))
         else:
             super().do_GET()
 
@@ -76,6 +93,15 @@ class DownloaderHandler(SimpleHTTPRequestHandler):
             self._handle_reveal(data)
         elif self.path == "/api/settings/output-dir":
             self._handle_set_output_dir(data)
+        # Downloads queue API (real backend)
+        elif self.path == "/api/downloads/enqueue":
+            self._handle_enqueue(data)
+        elif self.path == "/api/downloads/cancel":
+            self._handle_cancel_job(data)
+        elif self.path == "/api/downloads/retry":
+            self._handle_retry_job(data)
+        elif self.path == "/api/downloads/remove":
+            self._handle_remove_job(data)
         else:
             self._send_json({"error": "Not found"}, 404)
 
@@ -331,6 +357,190 @@ class DownloaderHandler(SimpleHTTPRequestHandler):
             }
         )
 
+    # --- Downloads Queue Handlers ---
+    def _handle_queue_list(self):
+        if not getattr(self, 'queue', None):
+            self._send_json({"items": [], "activeId": None})
+            return
+        queue, active_id = self.queue.get_queue()
+        self._send_json({
+            "items": [self._queue_item_to_json(q) for q in queue],
+            "activeId": active_id,
+        })
+
+    def _handle_history_list(self):
+        if not getattr(self, 'queue', None):
+            self._send_json({"items": []})
+            return
+        history = self.queue.get_history()
+        self._send_json({"items": [self._queue_item_to_json(h) for h in history]})
+
+    def _handle_active_item(self):
+        if not getattr(self, 'queue', None):
+            self._send_json({"active": None})
+            return
+        active = self.queue.get_active()
+        self._send_json({"active": self._queue_item_to_json(active) if active else None})
+
+    def _handle_enqueue(self, data: dict):
+        if not getattr(self, 'queue', None):
+            self._send_json({"error": "Queue not initialized"}, 500)
+            return
+        # Validate & normalize
+        book_id = data.get("bookId") or data.get("book_id")
+        title = data.get("title") or book_id
+        if not book_id or not title:
+            self._send_json({"error": "bookId and title required"}, 400)
+            return
+        # Parse formats via plugin
+        from plugins.downloader import DownloaderPlugin
+        formats = DownloaderPlugin.parse_formats(data.get("formats") or ["epub"])
+        payload = {
+            "bookId": book_id,
+            "title": title,
+            "authors": data.get("authors") or [],
+            "cover_url": data.get("cover_url") or data.get("coverUrl") or "",
+            "formats": formats,
+            "outputDir": data.get("outputDir") or str(config.OUTPUT_DIR),
+        }
+        # Advanced options
+        if data.get("chapters"):
+            payload["selected_chapters"] = data.get("chapters")
+        if data.get("skip_images"):
+            payload["skip_images"] = True
+        if data.get("chunking"):
+            payload["chunking"] = data.get("chunking")
+        item = self.queue.enqueue(payload)
+        self._send_json({"success": True, "item": self._queue_item_to_json(item)})
+
+    def _handle_cancel_job(self, data: dict):
+        if not getattr(self, 'queue', None):
+            self._send_json({"success": False, "error": "Queue not initialized"}, 500)
+            return
+        job_id = data.get("id")
+        if not job_id:
+            self._send_json({"success": False, "error": "id required"}, 400)
+            return
+        ok = self.queue.cancel(int(job_id))
+        self._send_json({"success": bool(ok)})
+
+    def _handle_retry_job(self, data: dict):
+        if not getattr(self, 'queue', None):
+            self._send_json({"success": False, "error": "Queue not initialized"}, 500)
+            return
+        job_id = data.get("id")
+        if not job_id:
+            self._send_json({"success": False, "error": "id required"}, 400)
+            return
+        item = self.queue.retry(int(job_id))
+        if not item:
+            self._send_json({"success": False, "error": "Not found or not failed"}, 400)
+            return
+        self._send_json({"success": True, "item": self._queue_item_to_json(item)})
+
+    def _handle_remove_job(self, data: dict):
+        if not getattr(self, 'queue', None):
+            self._send_json({"success": False, "error": "Queue not initialized"}, 500)
+            return
+        job_id = data.get("id")
+        if not job_id:
+            self._send_json({"success": False, "error": "id required"}, 400)
+            return
+        ok = self.queue.remove(int(job_id))
+        self._send_json({"success": bool(ok)})
+
+    def _queue_item_to_json(self, item):
+        if not item:
+            return None
+        from dataclasses import asdict
+        d = asdict(item)
+        return {
+            "id": d.get("id"),
+            "bookId": d.get("book_id"),
+            "title": d.get("title"),
+            "authors": d.get("authors") or [],
+            "cover_url": d.get("cover_url") or "",
+            "formats": d.get("formats") or [],
+            "outputDir": d.get("output_dir") or "",
+            "status": d.get("status"),
+            "progress": d.get("progress", 0),
+            "message": d.get("message"),
+            "current_chapter": d.get("current_chapter"),
+            "total_chapters": d.get("total_chapters"),
+            "chapter_title": d.get("chapter_title"),
+            "createdAt": d.get("created_at"),
+            "updatedAt": d.get("updated_at"),
+            "error": d.get("error"),
+            "result_files": d.get("result_files"),
+            # Advanced options echoed back
+            "chapters": d.get("selected_chapters"),
+            "skip_images": d.get("skip_images", False),
+            "chunking": d.get("chunking"),
+        }
+
+    # --- Library Handlers ---
+    def _handle_library_list(self):
+        items = self._scan_library()
+        self._send_json({"items": items})
+
+    def _handle_library_one(self, id_str: str):
+        try:
+            target_id = int(id_str)
+        except Exception:
+            self._send_json({"error": "Invalid id"}, 400)
+            return
+        items = self._scan_library()
+        for it in items:
+            try:
+                if int(it.get("id", 0)) == target_id:
+                    self._send_json({"item": it})
+                    return
+            except Exception:
+                continue
+        self._send_json({"error": "Not found"}, 404)
+
+    def _scan_library(self) -> list[dict]:
+        base = config.OUTPUT_DIR
+        if not base.exists():
+            return []
+        items = []
+        idx = 1
+        for p in sorted(base.iterdir()):
+            if not p.is_dir():
+                continue
+            title = p.name
+            cover = p / "Images" / "cover.jpg"
+            formats = []
+            if list(p.glob("*.epub")):
+                formats.append("epub")
+            if list(p.glob("**/*.md")):
+                formats.append("markdown")
+            if list(p.glob("**/*.pdf")):
+                formats.append("pdf")
+            if list(p.glob("**/*.txt")):
+                formats.append("plaintext")
+            if list(p.glob("**/*.json")):
+                formats.append("json")
+            latest_mtime = p.stat().st_mtime
+            for q in p.glob('**/*'):
+                try:
+                    if q.is_file():
+                        latest_mtime = max(latest_mtime, q.stat().st_mtime)
+                except Exception:
+                    pass
+            items.append({
+                "id": idx,
+                "bookId": "",
+                "title": title,
+                "authors": [],
+                "cover_url": cover.as_posix() if cover.exists() else "",
+                "outputPath": p.as_posix(),
+                "formats": formats,
+                "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(latest_mtime)),
+            })
+            idx += 1
+        return items
+
     def _send_json(self, data: dict, status: int = 200):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -346,6 +556,13 @@ def create_server(host: str = "localhost", port: int = 8000) -> HTTPServer:
     """Create and configure the HTTP server."""
     kernel = create_default_kernel()
     DownloaderHandler.kernel = kernel
+
+    # Initialize persistent queue worker
+    from .download_queue import DownloadQueue
+    db_path = Path(config.OUTPUT_DIR) / ".queue" / "downloads.sqlite3"
+    dq = DownloadQueue(db_path)
+    dq.start_worker(kernel)
+    DownloaderHandler.queue = dq
 
     server = HTTPServer((host, port), DownloaderHandler)
     return server

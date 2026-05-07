@@ -1,9 +1,25 @@
 // libraryService.js
-// Abstraction over library API; uses mock by default.
+// Abstraction over library API; now uses real backend by default.
 
-import { mockLibraryApi } from './mock/mockApi.js';
+const API = '';
 
-let impl = mockLibraryApi;
+const realLibraryApi = {
+  async getAll() {
+    const res = await fetch(`${API}/api/library`);
+    return res.json();
+  },
+  async getOne({ id }) {
+    const res = await fetch(`${API}/api/library/${id}`);
+    return res.json();
+  },
+  async refresh() {
+    // simple re-scan
+    const res = await fetch(`${API}/api/library`);
+    return res.json();
+  }
+};
+
+let impl = realLibraryApi;
 
 export function useImplementation(newImpl) {
   impl = newImpl;

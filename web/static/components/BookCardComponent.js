@@ -2,8 +2,9 @@
 // Represents a single book card UI with expand/collapse, format/output selection, chapter picker, download and cancel buttons, progress and result display
 
 import * as apiService from '../services/apiService.js';
-import * as downloadService from '../services/downloadService.js';
+import * as downloadsService from '../services/downloadsService.js';
 import * as stateService from '../services/stateService.js';
+import { setActivePage } from './SidebarComponent.js';
 
 export function createBookCardHTML(book) {
     return `
@@ -264,34 +265,9 @@ export function createBookCardHTML(book) {
                         </div>
                     </details>
 
-                    <!-- Progress Section -->
-                    <div class="progress-section hidden py-5 border-t border-zinc-100">
-                        <div class="flex justify-between items-center mb-2">
-                            <span class="progress-label text-sm font-medium text-zinc-700">Downloading...</span>
-                            <span class="progress-percent text-sm font-semibold text-oreilly-blue">0%</span>
-                        </div>
-                        <div class="h-1.5 bg-zinc-200 rounded-full overflow-hidden">
-                            <div class="progress-fill h-full bg-oreilly-blue rounded-full transition-all duration-300" style="width: 0%"></div>
-                        </div>
-                        <p class="progress-status mt-2 text-sm text-zinc-500"></p>
-                    </div>
-
-                    <!-- Result Section -->
-                    <div class="result-section hidden py-5 border-t border-zinc-100">
-                        <div class="flex items-center gap-2 mb-4 text-emerald-600 font-medium">
-                            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                                <polyline points="22 4 12 14.01 9 11.01"/>
-                            </svg>
-                            <span>Download Complete</span>
-                        </div>
-                        <div class="result-files space-y-2"></div>
-                    </div>
-
                     <!-- Action Bar -->
                     <div class="flex justify-end gap-2 pt-5 border-t border-zinc-100">
-                        <button class="cancel-btn hidden px-5 py-2 text-sm font-medium text-zinc-600 bg-white border border-zinc-300 rounded-lg hover:bg-zinc-50 transition-colors">Cancel</button>
-                        <button class="download-btn px-6 py-2 text-sm font-medium text-white bg-oreilly-blue hover:bg-oreilly-blue-dark rounded-lg transition-colors disabled:bg-zinc-300 disabled:cursor-not-allowed">Download</button>
+                        <button class="enqueue-btn px-6 py-2 text-sm font-medium text-white bg-oreilly-blue hover:bg-oreilly-blue-dark rounded-lg transition-colors disabled:bg-zinc-300 disabled:cursor-not-allowed">Enqueue</button>
                     </div>
                 </div>
             </div>
@@ -313,16 +289,10 @@ export function setupBookCardEvents(div, book) {
         collapseBook();
     };
 
-    // Download button
-    div.querySelector('.download-btn').onclick = (e) => {
+    // Enqueue button
+    div.querySelector('.enqueue-btn').onclick = (e) => {
         e.stopPropagation();
-        download(div);
-    };
-
-    // Cancel button
-    div.querySelector('.cancel-btn').onclick = (e) => {
-        e.stopPropagation();
-        cancelDownload(div);
+        enqueueJob(div, book);
     };
 
     // Format selection - update scope visibility
@@ -339,38 +309,11 @@ export function setupBookCardEvents(div, book) {
         });
     });
 
-    // Output style selection
-    div.querySelectorAll('input[name="output-style"]').forEach(radio => {
-        radio.addEventListener('change', (e) => {
-            // No special handling needed, just tracks selection
-        });
-    });
-
-    // Chapter selection buttons
-    div.querySelector('.select-all-btn').onclick = (e) => {
-        e.stopPropagation();
-        selectAllChapters(div, true);
-    };
-    div.querySelector('.select-none-btn').onclick = (e) => {
-        e.stopPropagation();
-        selectAllChapters(div, false);
-    };
-
-    // Browse button
-    div.querySelector('.browse-btn').onclick = (e) => {
-        e.stopPropagation();
-        browseOutputDir(div);
-    };
-
     // Advanced options toggle icon rotation
     const advancedOptions = div.querySelector('.advanced-options');
     advancedOptions.addEventListener('toggle', () => {
         const icon = advancedOptions.querySelector('.toggle-icon');
-        if (advancedOptions.open) {
-            icon.style.transform = 'rotate(90deg)';
-        } else {
-            icon.style.transform = 'rotate(0deg)';
-        }
+        icon.style.transform = advancedOptions.open ? 'rotate(90deg)' : 'rotate(0deg)';
     });
 }
 
@@ -463,7 +406,7 @@ export function expandBook(cardElement, bookId) {
     const outputDirInput = expanded.querySelector('.output-dir-input');
     outputDirInput.value = stateService.getState().defaultOutputDir || 'Loading...';
 
-    apiService.fetchBookDetails(bookId).then(book => {
+    apiService.fetchBookDetails(cardElement.dataset.bookId || bookId).then(book => {
         const publisherEl = expanded.querySelector('.publisher-value');
         const pagesEl = expanded.querySelector('.pages-value');
         const descEl = expanded.querySelector('.book-description');
@@ -495,11 +438,6 @@ export function collapseBook() {
         expandIcon.style.transform = 'rotate(0deg)';
 
         expanded.classList.add('hidden');
-
-        const progressSection = currentExpandedCard.querySelector('.progress-section');
-        const resultSection = currentExpandedCard.querySelector('.result-section');
-        progressSection.classList.add('hidden');
-        resultSection.classList.add('hidden');
 
         document.getElementById('search-results').classList.remove('has-expanded');
         stateService.setState({ currentExpandedCard: null });
@@ -543,28 +481,7 @@ function selectAllChapters(cardElement, selectAll) {
     updateChapterCount(cardElement);
 }
 
-async function browseOutputDir(cardElement) {
-    const browseBtn = cardElement.querySelector('.browse-btn');
-    const outputDirInput = cardElement.querySelector('.output-dir-input');
-
-    browseBtn.disabled = true;
-    browseBtn.textContent = 'Opening...';
-
-    try {
-        const data = await apiService.browseOutputDir();
-
-        if (data.success && data.path) {
-            outputDirInput.value = data.path;
-        }
-    } catch (err) {
-        console.error('Browse request failed:', err);
-    }
-
-    browseBtn.disabled = false;
-    browseBtn.textContent = 'Browse';
-}
-
-async function download(cardElement) {
+async function enqueueJob(cardElement, book) {
     const bookId = cardElement.dataset.bookId;
 
     const formatCheckboxes = cardElement.querySelectorAll('input[name="format"]:checked');
@@ -609,158 +526,49 @@ async function download(cardElement) {
         }
     }
 
-    const progressSection = cardElement.querySelector('.progress-section');
-    const resultSection = cardElement.querySelector('.result-section');
-    const downloadBtn = cardElement.querySelector('.download-btn');
-    const cancelBtn = cardElement.querySelector('.cancel-btn');
-    const progressFill = cardElement.querySelector('.progress-fill');
+    const outputDir = (cardElement.querySelector('.output-dir-input').value || '').trim();
+    const skipImages = !!cardElement.querySelector('.skip-images').checked;
+    const chunking = selectedFormats.includes('chunks') ? {
+        chunk_size: parseInt(cardElement.querySelector('.chunk-size-input').value) || 4000,
+        overlap: parseInt(cardElement.querySelector('.chunk-overlap-input').value) || 200,
+    } : null;
 
-    progressSection.classList.remove('hidden');
-    resultSection.classList.add('hidden');
-    downloadBtn.classList.add('hidden');
-    cancelBtn.classList.remove('hidden');
-    progressFill.style.width = '0%';
+    const payload = {
+        bookId: bookId,
+        title: book.title || bookId,
+        authors: book.authors || [],
+        cover_url: book.cover_url || '',
+        formats: finalFormats,
+        outputDir: outputDir,
+    };
+    if (selectedChapters && selectedChapters.length) payload.chapters = selectedChapters;
+    if (skipImages) payload.skip_images = true;
+    if (chunking) payload.chunking = chunking;
 
-    const outputDirInput = cardElement.querySelector('.output-dir-input');
-    const outputDir = outputDirInput.value.trim();
-
-    const requestBody = { book_id: bookId, formats: finalFormats };
-    if (selectedChapters !== null) {
-        requestBody.chapters = selectedChapters;
-    }
-    if (outputDir && outputDir !== stateService.getState().defaultOutputDir) {
-        requestBody.output_dir = outputDir;
-    }
-    if (selectedFormats.includes('chunks')) {
-        const chunkSize = parseInt(cardElement.querySelector('.chunk-size-input').value) || 4000;
-        const chunkOverlap = parseInt(cardElement.querySelector('.chunk-overlap-input').value) || 200;
-        requestBody.chunking = {
-            chunk_size: chunkSize,
-            overlap: chunkOverlap
-        };
-    }
-    if (cardElement.querySelector('.skip-images').checked) {
-        requestBody.skip_images = true;
-    }
-
-    function onProgress(data) {
-        if (typeof data.percentage === 'number') {
-            progressFill.style.width = `${data.percentage}%`;
-            cardElement.querySelector('.progress-percent').textContent = `${data.percentage}%`;
+    const btn = cardElement.querySelector('.enqueue-btn');
+    btn.disabled = true;
+    btn.textContent = 'Adding...';
+    try {
+        const res = await downloadsService.enqueue(payload);
+        if (res && res.success) {
+            showToast('Added to queue');
+            collapseBook();
+            setActivePage('downloads');
+        } else {
+            showToast(res.error || 'Failed to enqueue', true);
         }
-
-        const details = [];
-        if (data.current_chapter && data.total_chapters) {
-            details.push(`Chapter ${data.current_chapter}/${data.total_chapters}`);
-        }
-        if (data.eta_seconds && data.eta_seconds > 0) {
-            details.push(`~${formatETA(data.eta_seconds)} remaining`);
-        }
-
-        let status = data.status || 'waiting';
-        if (data.chapter_title) {
-            const title = data.chapter_title.length > 40
-                ? data.chapter_title.substring(0, 40) + '...'
-                : data.chapter_title;
-            status = title;
-        }
-
-        cardElement.querySelector('.progress-status').textContent = details.length > 0 ? details.join('  ') : status;
+    } catch (e) {
+        showToast('Failed to enqueue', true);
     }
-
-    function onComplete(data) {
-        progressSection.classList.add('hidden');
-        cardElement.querySelector('.result-section').classList.remove('hidden');
-
-        const resultFilesContainer = cardElement.querySelector('.result-files');
-        resultFilesContainer.innerHTML = '';
-
-        if (data.epub) resultFilesContainer.appendChild(createFileResultHTML('EPUB', data.epub));
-        if (data.pdf) {
-            if (Array.isArray(data.pdf)) {
-                const div = document.createElement('div');
-                div.className = 'flex items-center gap-3 px-4 py-3 bg-zinc-50 rounded-lg text-sm';
-                div.innerHTML = `<span class="font-medium text-zinc-700 min-w-[70px]">PDF</span><span class="flex-1 font-mono text-xs text-zinc-500 truncate">${data.pdf.length} chapter files</span>`;
-                resultFilesContainer.appendChild(div);
-            } else {
-                resultFilesContainer.appendChild(createFileResultHTML('PDF', data.pdf));
-            }
-        }
-        if (data.markdown) resultFilesContainer.appendChild(createFileResultHTML('Markdown', data.markdown));
-        if (data.plaintext) resultFilesContainer.appendChild(createFileResultHTML('Plain Text', data.plaintext));
-        if (data.json) resultFilesContainer.appendChild(createFileResultHTML('JSON', data.json));
-        if (data.chunks) resultFilesContainer.appendChild(createFileResultHTML('Chunks', data.chunks));
-
-        const downloadBtn = cardElement.querySelector('.download-btn');
-        const cancelBtn = cardElement.querySelector('.cancel-btn');
-        downloadBtn.classList.remove('hidden');
-        cancelBtn.classList.add('hidden');
-    }
-
-    function onError(error) {
-        cardElement.querySelector('.progress-status').textContent = `Error: ${error}`;
-        const downloadBtn = cardElement.querySelector('.download-btn');
-        const cancelBtn = cardElement.querySelector('.cancel-btn');
-        downloadBtn.classList.remove('hidden');
-        cancelBtn.classList.add('hidden');
-    }
-
-    downloadService.startDownload(requestBody, onProgress, onComplete, onError);
+    btn.disabled = false;
+    btn.textContent = 'Enqueue';
 }
 
-async function cancelDownload(cardElement) {
-    const cancelBtn = cardElement.querySelector('.cancel-btn');
-    cancelBtn.disabled = true;
-    cancelBtn.textContent = 'Cancelling...';
-
-    await downloadService.cancelDownload(() => {
-        cancelBtn.disabled = false;
-        cancelBtn.textContent = 'Cancel';
-        const downloadBtn = cardElement.querySelector('.download-btn');
-        downloadBtn.classList.remove('hidden');
-        cancelBtn.classList.add('hidden');
-    });
-}
-
-function formatETA(seconds) {
-    if (seconds < 60) return `${seconds}s`;
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    if (mins < 60) return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
-    const hours = Math.floor(mins / 60);
-    const remainMins = mins % 60;
-    return `${hours}h ${remainMins}m`;
-}
-
-function createFileResultHTML(label, path) {
-    const escapedPath = path.replace(/'/g, "\\'");
-    const container = document.createElement('div');
-    container.className = 'flex items-center gap-3 px-4 py-3 bg-zinc-50 rounded-lg text-sm';
-
-    const labelSpan = document.createElement('span');
-    labelSpan.className = 'font-medium text-zinc-700 min-w-[70px]';
-    labelSpan.textContent = label;
-
-    const pathSpan = document.createElement('span');
-    pathSpan.className = 'flex-1 font-mono text-xs text-zinc-500 truncate';
-    pathSpan.title = path;
-    pathSpan.textContent = path;
-
-    const button = document.createElement('button');
-    button.className = 'reveal-file-btn px-2 py-1 text-xs font-medium text-oreilly-blue hover:bg-oreilly-blue-light rounded transition-colors';
-    button.textContent = 'Reveal';
-    button.dataset.path = path;
-    button.addEventListener('click', async () => {
-        try {
-            await apiService.revealFile(path);
-        } catch (err) {
-            console.error('Failed to reveal file:', err);
-        }
-    });
-
-    container.appendChild(labelSpan);
-    container.appendChild(pathSpan);
-    container.appendChild(button);
-
-    return container;
+function showToast(message, isError = false) {
+    const container = document.body;
+    const div = document.createElement('div');
+    div.className = `fixed bottom-6 right-6 px-4 py-2 rounded shadow-lg text-sm ${isError ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'}`;
+    div.textContent = message;
+    container.appendChild(div);
+    setTimeout(() => { div.remove(); }, 2200);
 }
