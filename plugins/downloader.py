@@ -183,6 +183,12 @@ class DownloaderPlugin(Plugin):
         assets_plugin = self.kernel["assets"]
         html_processor = self.kernel["html_processor"]
         output_plugin = self.kernel["output"]
+        auth_plugin = self.kernel["auth"]
+
+        # Phase 0: Check session validity
+        status = auth_plugin.get_status()
+        if not status.get("valid", False):
+            raise Exception(status.get("message", "Session not valid"))
 
         # Phase 1: Fetch metadata
         report("starting", 0)

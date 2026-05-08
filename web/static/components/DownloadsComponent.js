@@ -71,37 +71,99 @@ export function initDownloads() {
   const activeEl = document.getElementById('downloads-active');
   const historyEl = document.getElementById('downloads-history');
   const refreshBtn = document.getElementById('downloads-refresh');
-  let pollInterval = null;
 
-  async function render(progressOnly = false) {
-    if (progressOnly) {
-      // Only refresh the active item's progress to reduce load
-      // Stop if we navigated away from the Downloads page
-      if (!activeEl || !activeEl.isConnected) {
-        if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
-        return;
-      }
-      const { active } = await downloads.getActive();
-      const activeId = active?.id ?? null;
-      if (active) {
-        activeEl.classList.remove('hidden');
-        activeEl.innerHTML = `
-          <div class="p-4 border border-oreilly-blue rounded-xl bg-oreilly-blue-light/40">
-            <div class="flex items-center gap-3">
-              <span class="text-[10px] uppercase font-bold text-oreilly-blue">Active</span>
-              ${statusBadge('running')}
-            </div>
-            <div class="mt-2">${itemRowHTML(active, activeId)}</div>
-          </div>`;
-      } else {
-        activeEl.classList.add('hidden');
-        activeEl.innerHTML = '';
-        // No active download anymore - stop polling
-        if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
-      }
+  // Polling + state
+  let pollInterval = null;
+  let hasPending = false; // true if there are queued or running items
+  let lastActiveId = null; // track active to detect completion transitions
+
+  // Helpers
+  function activeSectionHTML(active, activeId) {
+    return `
+        <div class="p-4 border border-oreilly-blue rounded-xl bg-oreilly-blue-light/40">
+          <div class="flex items-center gap-3">
+            <span class="text-[10px] uppercase font-bold text-oreilly-blue">Active</span>
+            ${statusBadge('running')}
+          </div>
+          <div class="mt-2">${itemRowHTML(active, activeId)}</div>
+        </div>`;
+  }
+
+  function setActiveUI(active, activeId) {
+    if (!activeEl) return;
+    if (active) {
+      activeEl.classList.remove('hidden');
+      activeEl.innerHTML = activeSectionHTML(active, activeId);
+    } else {
+      activeEl.classList.add('hidden');
+      activeEl.innerHTML = '';
+    }
+  }
+
+  function wireActions(container) {
+    container.querySelectorAll('[data-action],button[data-action]').forEach(btn => {
+      btn.addEventListener('click', onAction);
+    });
+  }
+
+  function stopPolling() {
+    if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+  }
+
+  function ensurePolling(isActivePresent = false) {
+    // Start polling when there is something queued OR an active job, otherwise stop.
+    const pagePresent = activeEl && activeEl.isConnected;
+    if (!pagePresent) {
+      stopPolling();
+      return;
+    }
+    const shouldPoll = hasPending || isActivePresent;
+    if (shouldPoll && !pollInterval) {
+      pollInterval = setInterval(() => tickActive(), 1000);
+    } else if (!shouldPoll && pollInterval) {
+      stopPolling();
+    }
+  }
+
+  // Progress-only tick. Keep it cheap: only hit /active and update the Active card.
+  async function tickActive() {
+    // Stop if we navigated away from the Downloads page
+    if (!activeEl || !activeEl.isConnected) {
+      stopPolling();
       return;
     }
 
+    try {
+      const { active } = await downloads.getActive();
+      const activeId = active?.id ?? null;
+
+      if (active) {
+        // If a new active item started (different id), the previous one just completed.
+        // Do a full refresh to update queue and history.
+        if (lastActiveId !== null && active.id !== lastActiveId) {
+          await renderFull();
+          return;
+        }
+        setActiveUI(active, activeId);
+        // Update lastActiveId so we can detect completion later
+        lastActiveId = active.id;
+      } else {
+        // No active item now
+        setActiveUI(null, null);
+
+        // If we previously had an active item, it just completed -> do a full refresh
+        if (lastActiveId !== null) {
+          lastActiveId = null;
+          await renderFull();
+        }
+        // Otherwise, keep polling if we still have items queued (hasPending=true)
+      }
+    } catch (err) {
+      // Swallow to avoid breaking polling on transient errors
+    }
+  }
+
+  async function renderFull() {
     const [{ items, activeId }, history] = await Promise.all([
       downloads.getQueue(),
       downloads.getHistory()
@@ -110,22 +172,13 @@ export function initDownloads() {
     const queued = items.filter(x => x.status === 'queued');
     const running = items.filter(x => x.status === 'running');
 
-    // Active
-    const active = running[0];
-    if (active) {
-      activeEl.classList.remove('hidden');
-      activeEl.innerHTML = `
-        <div class="p-4 border border-oreilly-blue rounded-xl bg-oreilly-blue-light/40">
-          <div class="flex items-center gap-3">
-            <span class="text-[10px] uppercase font-bold text-oreilly-blue">Active</span>
-            ${statusBadge('running')}
-          </div>
-          <div class="mt-2">${itemRowHTML(active, activeId)}</div>
-        </div>`;
-    } else {
-      activeEl.classList.add('hidden');
-      activeEl.innerHTML = '';
-    }
+    // Active section
+    const active = running[0] || null;
+    setActiveUI(active, activeId);
+
+    // Track state for polling and completion detection
+    hasPending = queued.length > 0 || !!active;
+    lastActiveId = active ? active.id : null;
 
     // Queue
     const queueHTML = queued.map(it => itemRowHTML(it, activeId)).join('');
@@ -136,23 +189,11 @@ export function initDownloads() {
     historyEl.innerHTML = histItems.map(it => itemRowHTML(it, activeId)).join('') || '<div class="text-sm text-zinc-400">No recent history.</div>';
 
     // Wire actions
-    listEl.querySelectorAll('[data-action],button[data-action]').forEach(btn => {
-      btn.addEventListener('click', onAction);
-    });
-    historyEl.querySelectorAll('[data-action],button[data-action]').forEach(btn => {
-      btn.addEventListener('click', onAction);
-    });
+    wireActions(listEl);
+    wireActions(historyEl);
 
-    // Start/stop polling depending on page presence and active job
-    if (!activeEl || !activeEl.isConnected) {
-      if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
-    } else if (active) {
-      if (!pollInterval) {
-        pollInterval = setInterval(() => render(true), 1000);
-      }
-    } else {
-      if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
-    }
+    // Start/stop polling depending on page presence and items in queue or active job
+    ensurePolling(!!active);
   }
 
   async function onAction(e) {
@@ -166,13 +207,15 @@ export function initDownloads() {
       if (action === 'remove') await downloads.remove(id);
     } finally {
       btn.disabled = false;
-      render();
+      // Always perform a full refresh after an action
+      renderFull();
     }
   }
 
-  // Ensure full refresh (queue + history), avoid passing the event object as progressOnly
-  refreshBtn.addEventListener('click', () => render(false));
+  // Ensure full refresh (queue + history), avoid passing the event object
+  refreshBtn.addEventListener('click', () => renderFull());
 
-  render();
-  // Polling starts/stops automatically based on page and active job.
+  // Initial load
+  renderFull();
+  // Polling starts/stops automatically based on page presence and queue/active state.
 }

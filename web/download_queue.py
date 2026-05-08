@@ -257,8 +257,9 @@ class DownloadQueue:
             if job is None:
                 time.sleep(0.5)
                 continue
-            # Random wait 1-5 minutes before starting
-            wait_seconds = random.randint(60, 300)
+            # Random wait 5-10 minutes before starting
+            wait_seconds = random.randint(300, 600)
+            print(f"[WAIT] Waiting {wait_seconds}s for title={job.title!r}")
             cancelled_before_start = False
             for _ in range(wait_seconds):
                 if self._stop_event.is_set():
@@ -278,6 +279,7 @@ class DownloadQueue:
                         break
                 time.sleep(1)
             if cancelled_before_start:
+                print(f"[CANCEL] Cancelled title={job.title!r}")
                 continue
             # Mark running
             self._set_status(job.id, "running")
@@ -304,7 +306,7 @@ class DownloadQueue:
                     except Exception:
                         chunk_cfg = None
                 out_dir = Path(job.output_dir) if job.output_dir else kernel["output"].get_default_dir()
-                print(f"[Queue] Starting download job id={job_id} title={job.title!r} book_id={job.book_id} formats={formats} output_dir={out_dir}")
+                print(f"[Queue] Starting download job id={job_id} title={job.title!r} book_id={job.book_id} formats={formats}")
                 result = downloader.download(
                     book_id=job.book_id,
                     output_dir=out_dir,
