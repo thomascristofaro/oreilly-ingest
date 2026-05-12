@@ -193,31 +193,14 @@ class DownloadQueue:
             if not row or row["status"] not in ("failed", "cancelled"):
                 return None
             now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-            cur = conn.execute(
-                """
-                INSERT INTO downloads (
-                    book_id, title, authors, cover_url, formats, output_dir,
-                    status, progress, created_at, updated_at,
-                    selected_chapters, skip_images, chunking
-                )
-                VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?)
-                """,
-                (
-                    row["book_id"],
-                    row["title"],
-                    row["authors"],
-                    row["cover_url"],
-                    row["formats"],
-                    row["output_dir"],
-                    now,
-                    now,
-                    row["selected_chapters"],
-                    row["skip_images"],
-                    row["chunking"],
-                ),
+            conn.execute(
+                "UPDATE downloads SET status='queued', progress=0, updated_at=? WHERE id=?",
+                (now, job_id),
             )
-            new_id = cur.lastrowid
-            row2 = conn.execute("SELECT * FROM downloads WHERE id=?", (new_id,)).fetchone()
+            row2 = conn.execute("SELECT * FROM downloads WHERE id=?", (job_id,)).fetchone()
+        # Clear any pending cancel flag for this job
+        with self._conn_lock:
+            self._cancel_flags.discard(int(job_id))
         return self._row_to_item(row2)
 
     def remove(self, job_id: int) -> bool:
@@ -242,12 +225,6 @@ class DownloadQueue:
     def _worker_loop(self, kernel):
         downloader = kernel["downloader"]
         while not self._stop_event.is_set():
-            # Respect minimum 60s between starts
-            if self._last_run_time is not None:
-                elapsed = time.time() - self._last_run_time
-                if elapsed < 60:
-                    time.sleep(60 - elapsed)
-                    # continue to next loop iteration to re-check state
             active_item = self.get_active()
             if active_item:
                 time.sleep(0.5)
@@ -257,8 +234,8 @@ class DownloadQueue:
             if job is None:
                 time.sleep(0.5)
                 continue
-            # Random wait 5-10 minutes before starting
-            wait_seconds = random.randint(300, 600)
+            # Random wait 1-3 minutes before starting
+            wait_seconds = random.randint(60, 180)
             print(f"[WAIT] Waiting {wait_seconds}s for title={job.title!r}")
             cancelled_before_start = False
             for _ in range(wait_seconds):
