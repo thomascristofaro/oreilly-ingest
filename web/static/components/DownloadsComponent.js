@@ -52,6 +52,7 @@ export function createDownloadsHTML() {
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-sm font-semibold text-zinc-700">Queue</h3>
         <div class="flex items-center gap-2">
+          <button id="downloads-queue-toggle" class="px-3 py-1.5 text-xs border border-zinc-300 rounded hover:bg-zinc-50">Start Queue</button>
           <button id="downloads-refresh" class="px-3 py-1.5 text-xs border border-zinc-300 rounded hover:bg-zinc-50">Refresh</button>
         </div>
       </div>
@@ -71,11 +72,13 @@ export function initDownloads() {
   const activeEl = document.getElementById('downloads-active');
   const historyEl = document.getElementById('downloads-history');
   const refreshBtn = document.getElementById('downloads-refresh');
+  const queueToggleBtn = document.getElementById('downloads-queue-toggle');
 
   // Polling + state
   let pollInterval = null;
   let hasPending = false; // true if there are queued or running items
   let lastActiveId = null; // track active to detect completion transitions
+  let queueRunning = false; // background worker running state
 
   // Helpers
   function activeSectionHTML(active, activeId) {
@@ -164,10 +167,16 @@ export function initDownloads() {
   }
 
   async function renderFull() {
-    const [{ items, activeId }, history] = await Promise.all([
+    const [{ items, activeId, running: isQueueRunning }, history] = await Promise.all([
       downloads.getQueue(),
       downloads.getHistory()
     ]);
+
+    // Update queue toggle button state
+    queueRunning = !!isQueueRunning;
+    if (queueToggleBtn) {
+      queueToggleBtn.textContent = queueRunning ? 'Stop Queue' : 'Start Queue';
+    }
 
     const queued = items.filter(x => x.status === 'queued');
     const running = items.filter(x => x.status === 'running');
@@ -214,6 +223,20 @@ export function initDownloads() {
 
   // Ensure full refresh (queue + history), avoid passing the event object
   refreshBtn.addEventListener('click', () => renderFull());
+
+  // Start/Stop queue toggle
+  if (queueToggleBtn) {
+    queueToggleBtn.addEventListener('click', async () => {
+      queueToggleBtn.disabled = true;
+      try {
+        if (queueRunning) await downloads.stopQueue();
+        else await downloads.startQueue();
+      } finally {
+        queueToggleBtn.disabled = false;
+        renderFull();
+      }
+    });
+  }
 
   // Initial load
   renderFull();

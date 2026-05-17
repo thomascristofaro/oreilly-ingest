@@ -102,6 +102,10 @@ class DownloaderHandler(SimpleHTTPRequestHandler):
             self._handle_retry_job(data)
         elif self.path == "/api/downloads/remove":
             self._handle_remove_job(data)
+        elif self.path == "/api/downloads/queue/start":
+            self._handle_queue_start()
+        elif self.path == "/api/downloads/queue/stop":
+            self._handle_queue_stop()
         else:
             self._send_json({"error": "Not found"}, 404)
 
@@ -360,12 +364,13 @@ class DownloaderHandler(SimpleHTTPRequestHandler):
     # --- Downloads Queue Handlers ---
     def _handle_queue_list(self):
         if not getattr(self, 'queue', None):
-            self._send_json({"items": [], "activeId": None})
+            self._send_json({"items": [], "activeId": None, "running": False})
             return
         queue, active_id = self.queue.get_queue()
         self._send_json({
             "items": [self._queue_item_to_json(q) for q in queue],
             "activeId": active_id,
+            "running": bool(self.queue.is_running()),
         })
 
     def _handle_history_list(self):
@@ -448,6 +453,22 @@ class DownloaderHandler(SimpleHTTPRequestHandler):
             return
         ok = self.queue.remove(int(job_id))
         self._send_json({"success": bool(ok)})
+
+    def _handle_queue_start(self):
+        if not getattr(self, 'queue', None):
+            self._send_json({"success": False, "error": "Queue not initialized"}, 500)
+            return
+        # Start the background worker (no-op if already running)
+        self.queue.start_worker(self.kernel)
+        self._send_json({"success": True, "running": True})
+
+    def _handle_queue_stop(self):
+        if not getattr(self, 'queue', None):
+            self._send_json({"success": False, "error": "Queue not initialized"}, 500)
+            return
+        # Stop the background worker (allows current job to finish)
+        self.queue.stop_worker()
+        self._send_json({"success": True, "running": False})
 
     def _queue_item_to_json(self, item):
         if not item:
@@ -561,7 +582,7 @@ def create_server(host: str = "localhost", port: int = 8000) -> HTTPServer:
     from .download_queue import DownloadQueue
     db_path = Path(config.OUTPUT_DIR) / ".queue" / "downloads.sqlite3"
     dq = DownloadQueue(db_path)
-    dq.start_worker(kernel)
+    # Queue worker is initialized but not started by default. Start via /api/downloads/queue/start
     DownloaderHandler.queue = dq
 
     server = HTTPServer((host, port), DownloaderHandler)

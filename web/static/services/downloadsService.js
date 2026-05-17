@@ -119,6 +119,22 @@ const realDownloadsApi = {
     });
     return res.json();
   },
+  async startQueue() {
+    const res = await fetch(`${API}/api/downloads/queue/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    return res.json();
+  },
+  async stopQueue() {
+    const res = await fetch(`${API}/api/downloads/queue/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    return res.json();
+  },
 };
 
 let impl = realDownloadsApi; // default to real backend
@@ -153,4 +169,12 @@ export async function retry(id) {
 
 export async function remove(id) {
   return impl.remove({ id });
+}
+
+export async function startQueue() {
+  return impl.startQueue();
+}
+
+export async function stopQueue() {
+  return impl.stopQueue();
 }

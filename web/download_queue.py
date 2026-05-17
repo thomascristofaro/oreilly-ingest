@@ -221,6 +221,10 @@ class DownloadQueue:
         if self._worker_thread:
             self._worker_thread.join(timeout=2)
 
+    def is_running(self) -> bool:
+        """Return True if the background worker thread is running."""
+        return bool(self._worker_thread and self._worker_thread.is_alive())
+
     # Internal
     def _worker_loop(self, kernel):
         downloader = kernel["downloader"]
